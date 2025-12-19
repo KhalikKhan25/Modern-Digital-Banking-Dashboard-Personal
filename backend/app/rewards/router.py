@@ -1,47 +1,39 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List, Dict, Any
-from app.dependencies import get_current_user
+from typing import List
+from sqlalchemy.orm import Session
+from app.dependencies import get_current_user, RoleChecker
+from app.database import get_db
+from app.rewards import service as rewards_service
+from app.rewards.schemas import RewardCreate, RewardUpdate, RewardResponse
+from app.models.user import User
 
 router = APIRouter()
 
-# In-memory rewards store per-user for demo purposes
-_store: Dict[int, Dict[int, Dict[str, Any]]] = {}
-_id_counters: Dict[int, int] = {}
+
+@router.get("/", response_model=List[RewardResponse])
+def list_rewards(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+	return rewards_service.get_rewards_for_user(db, current_user.id)
 
 
-@router.get("/", response_model=List[Dict])
-async def list_rewards(current_user=Depends(get_current_user)):
-	items = list(_store.get(current_user.id, {}).values())
-	return items
+@router.post("/", response_model=RewardResponse)
+def create_reward(payload: RewardCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+	return rewards_service.create_reward(db, current_user.id, payload)
 
 
-@router.post("/")
-async def create_reward(payload: Dict, current_user=Depends(get_current_user)):
-	uid = current_user.id
-	_id_counters.setdefault(uid, 0)
-	_id_counters[uid] += 1
-	rid = _id_counters[uid]
-	rec = {"id": rid, **payload}
-	_store.setdefault(uid, {})[rid] = rec
-	return rec
-
-
-@router.put("/{reward_id}")
-async def update_reward(reward_id: int, payload: Dict, current_user=Depends(get_current_user)):
-	uid = current_user.id
-	user_rewards = _store.get(uid, {})
-	if reward_id not in user_rewards:
+@router.put("/{reward_id}", response_model=RewardResponse)
+def update_reward(reward_id: int, payload: RewardUpdate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+	reward = rewards_service.get_reward(db, reward_id, current_user.id)
+	if not reward:
 		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reward not found")
-	user_rewards[reward_id].update(payload)
-	return user_rewards[reward_id]
+	return rewards_service.update_reward(db, reward, payload)
 
 
 @router.delete("/{reward_id}")
-async def delete_reward(reward_id: int, current_user=Depends(get_current_user)):
-	uid = current_user.id
-	user_rewards = _store.get(uid, {})
-	if reward_id not in user_rewards:
+def delete_reward(reward_id: int, db: Session = Depends(get_db), current_user: User = Depends(RoleChecker(["admin"]))):
+	# Admins may delete any reward; owners are still allowed if you change policy.
+	reward = rewards_service.get_reward_by_id(db, reward_id)
+	if not reward:
 		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reward not found")
-	del user_rewards[reward_id]
+	rewards_service.delete_reward(db, reward)
 	return {"message": "Reward deleted"}
 

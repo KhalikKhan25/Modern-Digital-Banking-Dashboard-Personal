@@ -17,6 +17,7 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     password = Column(String(255), nullable=False)
     phone = Column(String(20))
+    role = Column(String(50), nullable=False, server_default="user", default="user")
     kyc_status = Column(Enum(KycStatusEnum), default=KycStatusEnum.unverified)
     created_at = Column(TIMESTAMP, server_default=func.now())
     budgets = relationship("Budget", back_populates="user", cascade="all, delete-orphan")

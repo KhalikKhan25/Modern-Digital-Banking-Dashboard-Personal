@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 import re
 from sqlalchemy.orm import Session
-from typing import Dict
-from app.dependencies import get_current_user
+from typing import List, Dict
+from app.dependencies import get_current_user, RoleChecker
+from app.models.user import User
 from app.database import get_db
 from app.auth.schemas import UserResponse
 from app.users.schemas import UpdateProfile, UserSettings, ChangePasswordRequest
@@ -14,6 +15,13 @@ router = APIRouter()
 @router.get("/profile", response_model=UserResponse)
 async def get_profile(current_user=Depends(get_current_user)):
     return UserService.get_profile(current_user)
+
+
+@router.get("/", response_model=List[UserResponse])
+async def list_users(db: Session = Depends(get_db), current_user: User = Depends(RoleChecker(["admin"]))):
+    # Admin-only endpoint to list all users
+    users = db.query(type(current_user)).all()
+    return users
 
 
 @router.put("/profile", response_model=UserResponse)

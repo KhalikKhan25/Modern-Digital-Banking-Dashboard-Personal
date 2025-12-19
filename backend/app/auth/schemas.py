@@ -7,6 +7,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     phone: Optional[str] = None
+    role: Optional[str] = "user"
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -22,6 +23,7 @@ class UserResponse(BaseModel):
     name: str
     email: str
     phone: Optional[str]
+    role: str
     kyc_status: str
     created_at: datetime
     
@@ -33,3 +35,7 @@ class AuthResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str

@@ -5,10 +5,19 @@ from app.accounts.schemas import AccountCreate, AccountUpdate
 class AccountService:
     @staticmethod
     def create_account(db: Session, user_id: int, account_data: AccountCreate):
+        # normalize account_type values coming from frontend (e.g., 'Savings' -> 'savings')
+        acct_type_raw = (account_data.account_type or "").strip()
+        acct_type = acct_type_raw.lower().replace(" ", "_")
+        # allowed enum values (safety): savings, checking, credit_card, loan, investment
+        allowed = {"savings", "checking", "credit_card", "loan", "investment"}
+        if acct_type not in allowed:
+            # default to a safe enum value when frontend sends unexpected strings
+            acct_type = "savings"
+
         new_account = Account(
             user_id=user_id,
             bank_name=account_data.bank_name,
-            account_type=account_data.account_type,
+            account_type=acct_type,
             masked_account=account_data.masked_account,
             currency=account_data.currency,
             balance=account_data.balance
@@ -33,7 +42,16 @@ class AccountService:
     
     @staticmethod
     def update_account(db: Session, account: Account, account_data: AccountUpdate):
-        for key, value in account_data.dict(exclude_unset=True).items():
+        data = account_data.dict(exclude_unset=True)
+        # normalize account_type if provided
+        if "account_type" in data:
+            at_raw = (data.get("account_type") or "").strip()
+            at = at_raw.lower().replace(" ", "_")
+            if at not in {"savings", "checking", "credit_card", "loan", "investment"}:
+                at = "savings"
+            data["account_type"] = at
+
+        for key, value in data.items():
             setattr(account, key, value)
         
         db.commit()

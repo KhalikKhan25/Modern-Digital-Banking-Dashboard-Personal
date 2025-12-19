@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.auth.schemas import UserRegister, UserLogin
 from app.utils.password_hash import hash_password, verify_password
-from app.utils.jwt_handler import create_access_token, create_refresh_token
+from app.utils.jwt_handler import create_access_token, create_refresh_token, verify_token
 
 class AuthService:
     @staticmethod
@@ -18,7 +18,8 @@ class AuthService:
             name=user_data.name,
             email=user_data.email,
             password=hashed_password,
-            phone=user_data.phone
+            phone=user_data.phone,
+            role=(getattr(user_data, "role", None) or "user")
         )
         
         db.add(new_user)
@@ -37,7 +38,27 @@ class AuthService:
         return user, None
     
     @staticmethod
-    def create_tokens(user_id: int):
-        access_token = create_access_token({"sub": str(user_id)})
-        refresh_token = create_refresh_token({"sub": str(user_id)})
+    def create_tokens(user_id: int, role: str = "user"):
+        access_token = create_access_token({"sub": str(user_id), "role": role})
+        refresh_token = create_refresh_token({"sub": str(user_id), "role": role})
         return access_token, refresh_token
+
+    @staticmethod
+    def refresh_tokens(db: Session, refresh_token: str):
+        payload = verify_token(refresh_token)
+        if payload is None:
+            return None, "Invalid or expired refresh token"
+
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None, "Invalid token payload"
+
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user:
+            return None, "User not found"
+
+        access_token = create_access_token({"sub": str(user.id)})
+        # rotate refresh token
+        new_refresh_token = create_refresh_token({"sub": str(user.id)})
+
+        return (access_token, new_refresh_token), None
