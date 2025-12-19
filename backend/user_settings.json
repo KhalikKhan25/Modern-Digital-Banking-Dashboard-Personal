@@ -1,0 +1,10 @@
+{
+  "4": {
+    "notifications": true,
+    "emailAlerts": true,
+    "twoFactor": false,
+    "darkMode": false,
+    "currency": "INR",
+    "language": "English"
+  }
+}
