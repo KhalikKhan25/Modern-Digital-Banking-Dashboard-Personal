@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+import os
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base
@@ -9,6 +10,8 @@ from app.budgets.router import router as budgets_router
 from app.users.router import router as users_router
 from app.bills.router import router as bills_router
 from app.rewards.router import router as rewards_router
+from app.dependencies import require_admin_only
+from app.models.user import User
 
 # Create tables - wrapped in try/except to handle database connection issues
 try:
@@ -24,9 +27,24 @@ app = FastAPI(
 )
 
 # CORS middleware
+# Apply CORS middleware. Use configured origins when provided; fall back to permissive
+# wildcard during development to avoid Swagger "Failed to fetch" errors caused by
+# origin mismatches. In production you should lock this down to your frontend host.
+origins = settings.CORS_ORIGINS or []
+# Ensure wildcard is allowed in development or when explicitly configured via env.
+# If an environment variable `ALLOW_ALL_CORS` is set, or if running locally,
+# include the wildcard origin to avoid Swagger "Failed to fetch" issues.
+allow_all = os.getenv("ALLOW_ALL_CORS") or os.getenv("ENV", "").lower() in ("dev", "development")
+if allow_all:
+    if "*" not in origins:
+        origins = list(origins) + ["*"]
+elif not origins:
+    # Fallback permissive for convenience when CORS_ORIGINS not provided
+    origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,6 +66,95 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+# Startup migration: ensure `users.role` exists. Safe to run repeatedly.
+@app.on_event("startup")
+def ensure_role_column():
+    from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
+    from app.database import engine
+
+    check_sql = text("SELECT column_name FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'role'")
+    alter_sql = text("ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'user';")
+
+    try:
+        with engine.connect() as conn:
+            r = conn.execute(check_sql)
+            exists = r.fetchone() is not None
+            if exists:
+                print('Role column exists — no migration needed')
+            else:
+                print('Role column missing — applying migration...')
+                conn.execute(alter_sql)
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+                print('✅ Role column migration completed')
+    except SQLAlchemyError as e:
+        print('Warning: could not run role-column migration on startup:', e)
+    except Exception as e:
+        print('Unexpected error during startup migration:', e)
+
+
+@app.on_event("startup")
+def promote_render_test_to_admin():
+    """If a user with email `render.test@example.com` exists, make them an admin.
+
+    This is a safe no-op if the user is not present; it helps automated deployments
+    where you want a default admin user to exist for testing.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.user import User
+
+        db = SessionLocal()
+        target_email = "render.test@example.com"
+        user = db.query(User).filter(User.email == target_email).first()
+        if user:
+            if getattr(user, "role", None) != "admin":
+                user.role = "admin"
+                db.add(user)
+                db.commit()
+                print(f"Promoted {target_email} to admin on startup")
+            else:
+                print(f"{target_email} already admin")
+        else:
+            print(f"No user with email {target_email} found on startup — skipping admin promotion")
+    except Exception as e:
+        # Don't fail app startup if DB isn't available yet
+        print("Warning: could not promote render.test@example.com to admin on startup:", e)
+
+
+@app.post("/admin/fix-db")
+async def fix_db(current_user: User = Depends(require_admin_only)):
+    """Temporary endpoint to fix role column - DELETE AFTER USE"""
+    from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
+    from app.database import engine
+
+    try:
+        with engine.connect() as conn:
+            # Use IF NOT EXISTS logic via information_schema check to avoid errors
+            r = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'role'"))
+            exists = r.fetchone() is not None
+            if exists:
+                return {"status": "Role column fixed"}
+
+            conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'user';"))
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            print('✅ Role column migration completed via /admin/fix-db')
+            return {"status": "Role column fixed"}
+    except SQLAlchemyError as e:
+        print('Error running /admin/fix-db:', e)
+        return {"error": str(e)}
+    except Exception as e:
+        print('Unexpected error running /admin/fix-db:', e)
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

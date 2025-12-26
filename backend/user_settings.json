@@ -14,5 +14,53 @@
     "darkMode": false,
     "currency": "INR",
     "language": "English"
+  },
+  "7": {
+    "notifications": true,
+    "emailAlerts": true,
+    "twoFactor": false,
+    "darkMode": false,
+    "currency": "INR",
+    "language": "English"
+  },
+  "8": {
+    "notifications": true,
+    "emailAlerts": true,
+    "twoFactor": false,
+    "darkMode": false,
+    "currency": "INR",
+    "language": "English"
+  },
+  "15": {
+    "notifications": true,
+    "emailAlerts": true,
+    "twoFactor": false,
+    "darkMode": false,
+    "currency": "INR",
+    "language": "English"
+  },
+  "16": {
+    "notifications": true,
+    "emailAlerts": true,
+    "twoFactor": false,
+    "darkMode": false,
+    "currency": "INR",
+    "language": "English"
+  },
+  "21": {
+    "notifications": true,
+    "emailAlerts": true,
+    "twoFactor": false,
+    "darkMode": false,
+    "currency": "INR",
+    "language": "English"
+  },
+  "23": {
+    "notifications": true,
+    "emailAlerts": true,
+    "twoFactor": false,
+    "darkMode": false,
+    "currency": "INR",
+    "language": "English"
   }
 }

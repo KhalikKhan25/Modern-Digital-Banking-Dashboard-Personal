@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_user_or_admin, require_write_access
 from app.models.user import User
 from app.budgets.schemas import BudgetCreate, BudgetUpdate, BudgetResponse
 from app.budgets.service import BudgetService
@@ -13,7 +13,7 @@ router = APIRouter()
 @router.post("/", response_model=BudgetResponse)
 async def create_budget(
 	budget_data: BudgetCreate,
-	current_user: User = Depends(get_current_user),
+	current_user: User = Depends(require_write_access),
 	db: Session = Depends(get_db)
 ):
 	budget = BudgetService.create_budget(db, current_user.id, budget_data)
@@ -24,10 +24,17 @@ async def create_budget(
 async def get_budgets(
 	month: Optional[int] = Query(None),
 	year: Optional[int] = Query(None),
-	current_user: User = Depends(get_current_user),
+	current_user: User = Depends(require_user_or_admin),
 	db: Session = Depends(get_db)
 ):
-	budgets = BudgetService.get_user_budgets(db, current_user.id, month=month, year=year)
+	# Admins can list all budgets; regular users get only their own.
+	user_role = getattr(current_user, "role", "user")
+
+	if user_role == "admin":
+		budgets = BudgetService.get_all_budgets(db, month=month, year=year)
+	else:
+		budgets = BudgetService.get_user_budgets(db, current_user.id, month=month, year=year)
+
 	return budgets
 
 
@@ -52,7 +59,7 @@ async def get_budget(
 async def update_budget(
 	budget_id: int,
 	budget_data: BudgetUpdate,
-	current_user: User = Depends(get_current_user),
+	current_user: User = Depends(require_write_access),
 	db: Session = Depends(get_db)
 ):
 	budget = BudgetService.get_budget_by_id(db, budget_id, current_user.id)
@@ -70,7 +77,7 @@ async def update_budget(
 @router.delete("/{budget_id}")
 async def delete_budget(
 	budget_id: int,
-	current_user: User = Depends(get_current_user),
+	current_user: User = Depends(require_write_access),
 	db: Session = Depends(get_db)
 ):
 	budget = BudgetService.get_budget_by_id(db, budget_id, current_user.id)

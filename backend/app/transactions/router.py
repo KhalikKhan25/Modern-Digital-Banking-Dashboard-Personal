@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile,
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_write_access
 from app.models.user import User
 from app.models.account import Account
 from app.transactions.schemas import TransactionCreate, TransactionResponse
@@ -10,11 +10,23 @@ from app.transactions.service import TransactionService
 
 router = APIRouter()
 
+
+@router.get("/", response_model=List[TransactionResponse])
+async def get_user_transactions(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Return transactions across all accounts belonging to the current user."""
+    transactions = TransactionService.get_user_transactions(db, current_user.id, skip, limit)
+    return transactions
+
 @router.post("/{account_id}", response_model=TransactionResponse)
 async def create_transaction(
     account_id: int,
     transaction_data: TransactionCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_write_access),
     db: Session = Depends(get_db)
 ):
     # Verify account belongs to user
@@ -88,7 +100,7 @@ async def get_transaction(
 async def import_csv(
     account_id: int,
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_write_access),
     db: Session = Depends(get_db)
 ):
     # Verify account belongs to user

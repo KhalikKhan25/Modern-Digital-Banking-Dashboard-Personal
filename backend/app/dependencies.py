@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -58,3 +58,70 @@ class RoleChecker:
         if user_role not in self.allowed_roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient privileges")
         return current_user
+
+
+# Convenience dependency callables for common role checks.
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Require the current user to be an admin.
+
+    Use as: `current_user: User = Depends(require_admin)`
+    """
+    user_role = getattr(current_user, "role", "user")
+    if user_role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    return current_user
+
+
+def require_user_or_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Require the current user to be either a regular user or an admin.
+
+    Use this on endpoints where owners (users) and admins are allowed.
+    """
+    user_role = getattr(current_user, "role", "user")
+    if user_role not in ("user", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User or admin privileges required")
+    return current_user
+
+
+def require_auditor_or_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Require auditor or admin role for read-only system-wide access.
+
+    Use on endpoints that auditors may call (read-only).
+    """
+    user_role = getattr(current_user, "role", "user")
+    if user_role not in ("auditor", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Auditor or admin privileges required")
+    return current_user
+
+
+def forbid_auditor_writes(request: Request, current_user: User = Depends(get_current_user)) -> None:
+    """Prevent users with role 'auditor' from performing write operations.
+
+    Use on write endpoints as: `Depends(forbid_auditor_writes)`. This allows
+    auditors to call read endpoints but blocks POST/PUT/PATCH/DELETE.
+    """
+    user_role = getattr(current_user, "role", "user")
+    if user_role == "auditor" and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Auditor role is read-only; write operations are forbidden")
+    return None
+
+
+def require_read_access(current_user: User = Depends(get_current_user)) -> User:
+    """ALL roles can READ (user, admin, auditor)."""
+    return current_user
+
+
+def require_write_access(current_user: User = Depends(get_current_user)) -> User:
+    """User and Admin only. Auditors are blocked from writes."""
+    user_role = getattr(current_user, "role", "user")
+    if user_role in ("user", "admin"):
+        return current_user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User or admin privileges required for write")
+
+
+def require_admin_only(current_user: User = Depends(get_current_user)) -> User:
+    """Admin only."""
+    user_role = getattr(current_user, "role", "user")
+    if user_role == "admin":
+        return current_user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
