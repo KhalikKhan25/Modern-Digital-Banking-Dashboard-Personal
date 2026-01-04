@@ -8,13 +8,13 @@ import {
 import { getAccounts } from '../api/accounts';
 import { getTransactions,createTransaction} from '../api/transactions';
 import toast from 'react-hot-toast';
-import formatError from '../utils/formatError';
 
 export default function Transfer() {
   const [accounts, setAccounts] = useState([]);
   const [transactions, setTransactions] = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [selectedAccount, setSelectedAccount] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -53,7 +53,7 @@ export default function Transfer() {
         setSelectedAccount(data[0].id);
       }
     } catch (e) {
-      toast.error(formatError(e) || 'Failed to load accounts');
+      toast.error(e.message || 'Failed to load accounts');
     } finally {
       setLoading(false);
     }
@@ -65,7 +65,7 @@ export default function Transfer() {
       const data = await getTransactions(selectedAccount);
       setTransactions(data);
     } catch (e) {
-      toast.error(formatError(e) || 'No transactions found');
+      toast.error(e.message || 'No transactions found');
       setTransactions([]);
     } finally {
       setLoading(false);
@@ -101,7 +101,7 @@ export default function Transfer() {
       });
       loadTransactions();
     } catch (e) {
-      toast.error(formatError(e) || 'Failed to create transaction');
+      toast.error(e.message || 'Failed to create transaction');
     } finally {
       setLoading(false);
     }

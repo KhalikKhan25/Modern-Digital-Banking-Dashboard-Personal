@@ -1,6 +1,9 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect
 from app.models.account import Account
 from app.accounts.schemas import AccountCreate, AccountUpdate
+from app.models.transaction import Transaction
+from app.models.bill import Bill
 
 class AccountService:
     @staticmethod
@@ -71,5 +74,39 @@ class AccountService:
     
     @staticmethod
     def delete_account(db: Session, account: Account):
-        db.delete(account)
-        db.commit()
+        # Delete related transactions and bills first to avoid FK constraint issues.
+        # Commit after deleting dependents so a failure there doesn't leave the
+        # session in an aborted state when we try to delete the account itself.
+        txns_deleted = 0
+        bills_deleted = 0
+        try:
+            txns_deleted = db.query(Transaction).filter(Transaction.account_id == account.id).delete(synchronize_session=False)
+            # Some deployments / schemas may not have `bills.account_id` column in the DB.
+            # Inspect the database to confirm the physical column exists before issuing the DELETE.
+            try:
+                inspector = inspect(db.bind)
+                bill_columns = [col['name'] for col in inspector.get_columns('bills')]
+            except Exception:
+                bill_columns = []
+
+            if 'account_id' in bill_columns:
+                bills_deleted = db.query(Bill).filter(Bill.account_id == account.id).delete(synchronize_session=False)
+
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        # Now delete the account in a fresh transaction. If this fails, it will
+        # raise and leave the DB consistent because dependents were already removed.
+        try:
+            db.delete(account)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        return {
+            "txns_deleted": int(txns_deleted or 0),
+            "bills_deleted": int(bills_deleted or 0)
+        }

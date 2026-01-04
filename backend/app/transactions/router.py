@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
@@ -29,17 +30,15 @@ async def create_transaction(
     current_user: User = Depends(require_write_access),
     db: Session = Depends(get_db)
 ):
-    # Verify account belongs to user
-    account = db.query(Account).filter(
-        Account.id == account_id,
-        Account.user_id == current_user.id
-    ).first()
-    
+    # Load account (admins may act on any account)
+    account = db.query(Account).filter(Account.id == account_id).first()
+
     if not account:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Account not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+    # Allow admins to operate on any account; regular users only their own
+    if getattr(current_user, "role", None) != "admin" and account.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account not found")
     
     transaction = TransactionService.create_transaction(db, account_id, transaction_data)
     return transaction
@@ -53,17 +52,19 @@ async def get_transactions(
     db: Session = Depends(get_db)
 ):
     # Verify account belongs to user
-    account = db.query(Account).filter(
-        Account.id == account_id,
-        Account.user_id == current_user.id
-    ).first()
-    
+    # Load account (admins may access any account)
+    account = db.query(Account).filter(Account.id == account_id).first()
+
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found"
         )
-    
+
+    # Allow admins to view any account; normal users only their own
+    if getattr(current_user, "role", None) != "admin" and account.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
     transactions = TransactionService.get_account_transactions(db, account_id, skip, limit)
     return transactions
 
@@ -75,17 +76,19 @@ async def get_transaction(
     db: Session = Depends(get_db)
 ):
     # Verify account belongs to user
-    account = db.query(Account).filter(
-        Account.id == account_id,
-        Account.user_id == current_user.id
-    ).first()
-    
+    # Load account (admins may access any account)
+    account = db.query(Account).filter(Account.id == account_id).first()
+
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found"
         )
-    
+
+    # Allow admins to view any account; normal users only their own
+    if getattr(current_user, "role", None) != "admin" and account.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
     transaction = TransactionService.get_transaction_by_id(db, transaction_id, account_id)
     
     if not transaction:
@@ -104,27 +107,23 @@ async def import_csv(
     db: Session = Depends(get_db)
 ):
     # Verify account belongs to user
-    account = db.query(Account).filter(
-        Account.id == account_id,
-        Account.user_id == current_user.id
-    ).first()
-    
+    account = db.query(Account).filter(Account.id == account_id).first()
+
     if not account:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Account not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+    if getattr(current_user, "role", None) != "admin" and account.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account not found")
     
     # Read CSV content
     content = await file.read()
     csv_content = content.decode('utf-8')
     
     try:
-        transactions = TransactionService.import_csv(db, account_id, csv_content)
-        return {
-            "message": f"Successfully imported {len(transactions)} transactions",
-            "count": len(transactions)
-        }
+        summary = TransactionService.import_csv(db, account_id, csv_content)
+        return JSONResponse(status_code=status.HTTP_201_CREATED, content=summary)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -2,13 +2,15 @@ from sqlalchemy.orm import Session
 from app.models.bill import Bill
 from app.bills.schemas import BillCreate, BillUpdate
 from decimal import Decimal
+from fastapi import HTTPException, status
 
 
 class BillService:
     @staticmethod
-    def create_bill(db: Session, user_id: int, payload: BillCreate):
+    def create_bill(db: Session, user_id: int, payload: BillCreate, account_id: int = None):
         bill = Bill(
             user_id=user_id,
+            account_id=account_id,
             biller_name=payload.biller_name,
             due_date=payload.due_date,
             amount_due=payload.amount_due,
@@ -37,6 +39,14 @@ class BillService:
         return db.query(Bill).filter(Bill.id == bill_id).first()
 
     @staticmethod
+    def get_bill_safe(db: Session, bill_id: int):
+        """Return a bill by id or raise 404 if not found."""
+        bill = db.query(Bill).filter(Bill.id == bill_id).first()
+        if not bill:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
+        return bill
+
+    @staticmethod
     def update_bill(db: Session, bill: Bill, payload: BillUpdate):
         # Exclude unset and None values so partial updates don't overwrite
         # existing fields with nulls when the client sends empty values.
@@ -54,16 +64,18 @@ class BillService:
             setattr(bill, k, v)
 
         # Auto-deduction: only when transitioning to paid for the first time
-        if will_mark_paid and previous_status != "paid" and account_id is not None:
+        if will_mark_paid and previous_status != "paid":
             # perform balance adjustment using account model
             from app.models.account import Account
 
-            acct = db.query(Account).filter(Account.id == account_id).first()
-            if acct:
-                # Treat bill payment as a debit on the account balance (subtract amount_due)
-                # Use Decimal arithmetic to avoid float drift
-                acct.balance = (acct.balance or Decimal("0")) - (bill.amount_due or Decimal("0"))
-                db.add(acct)
+            # Prefer an account recorded on the bill if present, otherwise use the provided account_id
+            acct_lookup_id = getattr(bill, "account_id", None) or account_id
+            if acct_lookup_id is not None:
+                acct = db.query(Account).filter(Account.id == acct_lookup_id).first()
+                if acct:
+                    # Treat bill payment as a debit on the account balance (subtract amount_due)
+                    acct.balance = (acct.balance or Decimal("0")) - (bill.amount_due or Decimal("0"))
+                    db.add(acct)
 
         db.add(bill)
         # Commit once and refresh updated objects to keep transaction consistent
@@ -89,8 +101,8 @@ class BillService:
 
 
 # small compatibility layer to match router imports
-def create_bill(db: Session, user_id: int, payload: BillCreate):
-    return BillService.create_bill(db, user_id, payload)
+def create_bill(db: Session, user_id: int, payload: BillCreate, account_id: int = None):
+    return BillService.create_bill(db, user_id, payload, account_id)
 
 def get_bills_for_user(db: Session, user_id: int):
     return BillService.get_bills_for_user(db, user_id)
@@ -109,3 +121,7 @@ def update_bill(db: Session, bill: Bill, payload: BillUpdate):
 
 def delete_bill(db: Session, bill: Bill):
     return BillService.delete_bill(db, bill)
+
+
+def get_all_bills(db: Session):
+    return BillService.get_all_bills(db)
