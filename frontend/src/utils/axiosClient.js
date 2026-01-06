@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const API_BASE_URL = "https://modern-digital-banking-dashboard.onrender.com/api";
+// Use Vite environment variable `VITE_API_URL` if provided, otherwise fall back to localhost
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const axiosClient = axios.create({
   baseURL: API_BASE_URL,
