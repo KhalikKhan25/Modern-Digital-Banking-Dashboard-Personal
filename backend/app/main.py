@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends
+import fastapi
+from fastapi import Depends
 import os
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
@@ -22,7 +23,7 @@ except Exception as e:
     print(f"Warning: Could not create database tables: {e}")
     print("Make sure PostgreSQL is running with correct credentials")
 
-app = FastAPI(
+app = fastapi.FastAPI(
     title="Modern Digital Banking Dashboard",
     description="Unified personal banking hub",
     version="1.0.0"
@@ -32,17 +33,14 @@ app = FastAPI(
 # Apply CORS middleware. Use configured origins when provided; fall back to permissive
 # wildcard during development to avoid Swagger "Failed to fetch" errors caused by
 # origin mismatches. In production you should lock this down to your frontend host.
-origins = settings.CORS_ORIGINS or []
-# Ensure wildcard is allowed in development or when explicitly configured via env.
-# If an environment variable `ALLOW_ALL_CORS` is set, or if running locally,
-# include the wildcard origin to avoid Swagger "Failed to fetch" issues.
-allow_all = os.getenv("ALLOW_ALL_CORS") or os.getenv("ENV", "").lower() in ("dev", "development")
-if allow_all:
-    if "*" not in origins:
-        origins = list(origins) + ["*"]
-elif not origins:
-    # Fallback permissive for convenience when CORS_ORIGINS not provided
-    origins = ["*"]
+
+origins = [
+    "http://localhost:5173",
+    "http://localhost:4173",
+    "http://localhost:4174",
+    "https://modern-digital-banking-dashboard-pe-lemon.vercel.app",
+    "https://modern-digital-banking-dashboard-personal-so6b-cukb07hi0.vercel.app",
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,7 +49,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Include routers
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(accounts_router, prefix="/api/accounts", tags=["accounts"])
