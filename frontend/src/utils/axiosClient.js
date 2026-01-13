@@ -1,18 +1,6 @@
 import axios from "axios";
 
-// Use explicit local API during development when running on localhost.
-const DEFAULT_REMOTE = "https://modern-digital-banking-dashboard-d8iu.onrender.com/api";
-const API_BASE_URL = (function() {
-  try {
-    const host = window && window.location && window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://127.0.0.1:8000/api';
-    }
-  } catch (e) {
-    // ignore
-  }
-  return DEFAULT_REMOTE;
-})();
+const API_BASE_URL = "https://modern-digital-banking-dashboard-d8iu.onrender.com/api";
 
 const axiosClient = axios.create({
   baseURL: API_BASE_URL,
